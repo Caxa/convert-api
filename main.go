@@ -1,42 +1,43 @@
-//http://localhost:8000/convert?from=centimeters&to=meters&value=150
-
+// main.go
 package main
 
 import (
 	"fmt"
+	"html/template"
 	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 )
 
-func centimetersToMeters(centimeters float64) float64 {
-	return centimeters / 100
+type conversionFunc func(float64) float64
+
+var unitConversions = map[string]map[string]conversionFunc{
+	"centimeters": {
+		"meters":      func(cm float64) float64 { return cm / 100 },
+		"decimeters":  func(cm float64) float64 { return cm / 10 },
+	},
+	"decimeters": {
+		"meters":      func(dm float64) float64 { return dm / 10 },
+		"centimeters": func(dm float64) float64 { return dm * 10 },
+	},
+	"meters": {
+		"centimeters": func(m float64) float64 { return m * 100 },
+		"decimeters":  func(m float64) float64 { return m * 10 },
+	},
 }
 
-func metersToCentimeters(meters float64) float64 {
-	return meters * 100
-}
-
-func centimetersToDecimeters(centimeters float64) float64 {
-	return centimeters / 10
-}
-
-func decimetersToCentimeters(decimeters float64) float64 {
-	return decimeters * 10
-}
-
-func metersToDecimeters(meters float64) float64 {
-	return meters * 10
-}
-
-func decimetersToMeters(decimeters float64) float64 {
-	return decimeters / 10
+type PageVariables struct {
+	From   string
+	To     string
+	Value  float64
+	Result float64
 }
 
 func convertHandler(w http.ResponseWriter, r *http.Request) {
 	queryParams := r.URL.Query()
-	from := queryParams.Get("from")
-	to := queryParams.Get("to")
-	valueStr := queryParams.Get("value")
+	from, to, valueStr := queryParams.Get("from"), queryParams.Get("to"), queryParams.Get("value")
 
 	value, err := strconv.ParseFloat(valueStr, 64)
 	if err != nil {
@@ -44,59 +45,51 @@ func convertHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var result float64
-	var fromUnit string
-	var toUnit string
-
-	switch from {
-	case "centimeters":
-		fromUnit = "centimeters"
-		switch to {
-		case "meters":
-			toUnit = "meters"
-			result = centimetersToMeters(value)
-		case "decimeters":
-			toUnit = "decimeters"
-			result = centimetersToDecimeters(value)
-		default:
-			http.Error(w, "Invalid conversion", http.StatusBadRequest)
-			return
-		}
-	case "decimeters":
-		fromUnit = "decimeters"
-		switch to {
-		case "meters":
-			toUnit = "meters"
-			result = decimetersToMeters(value)
-		case "centimeters":
-			toUnit = "centimeters"
-			result = decimetersToCentimeters(value)
-		default:
-			http.Error(w, "Invalid conversion", http.StatusBadRequest)
-			return
-		}
-	case "meters":
-		fromUnit = "meters"
-		switch to {
-		case "centimeters":
-			toUnit = "centimeters"
-			result = metersToCentimeters(value)
-		case "decimeters":
-			toUnit = "decimeters"
-			result = metersToDecimeters(value)
-		default:
-			http.Error(w, "Invalid conversion", http.StatusBadRequest)
-			return
-		}
-	default:
+	conversion, ok := unitConversions[from][to]
+	if !ok {
 		http.Error(w, "Invalid conversion", http.StatusBadRequest)
 		return
 	}
 
-	fmt.Fprintf(w, "%.2f %s is equal to %.2f %s", value, fromUnit, result, toUnit)
+	result := conversion(value)
+
+	tmpl, err := template.ParseFiles("index.html")
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	data := PageVariables{
+		From:   from,
+		To:     to,
+		Value:  value,
+		Result: result,
+	}
+
+	tmpl.Execute(w, data)
+}
+
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+	tmpl, err := template.ParseFiles("index.html")
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	tmpl.Execute(w, nil)
 }
 
 func main() {
+	go func() {
+		ch := make(chan os.Signal, 1)
+		signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
+		<-ch
+		fmt.Println("Received interrupt signal. Shutting down...")
+		os.Exit(0)
+	}()
+
 	http.HandleFunc("/convert", convertHandler)
-	http.ListenAndServe(":8000", nil)
+	http.HandleFunc("/", indexHandler)
+	fmt.Println("Server is running on http://localhost:8080")
+	http.ListenAndServe(":8080", nil)
 }
