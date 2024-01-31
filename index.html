@@ -1,0 +1,36 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unit Converter</title>
+</head>
+<body>
+    <h1>Unit Converter</h1>
+    <form action="/convert" method="GET">
+        <label for="from">From:</label>
+        <select name="from" id="from">
+            <option value="centimeters">Centimeters</option>
+            <option value="decimeters">Decimeters</option>
+            <option value="meters">Meters</option>
+        </select>
+
+        <label for="to">To:</label>
+        <select name="to" id="to">
+            <option value="centimeters">Centimeters</option>
+            <option value="decimeters">Decimeters</option>
+            <option value="meters">Meters</option>
+        </select>
+
+        <label for="value">Value:</label>
+        <input type="text" name="value" id="value" required>
+
+        <button type="submit">Convert</button>
+    </form>
+
+    {{ if .Result }}
+        <p>Result: {{ .Value }} {{ .From }} is equal to {{ .Result }} {{ .To }}</p>
+    {{ end }}
+</body>
+</html>
